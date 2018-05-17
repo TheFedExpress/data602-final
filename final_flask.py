@@ -20,7 +20,6 @@ def show_best():
     print('starting_model')
     table = make_table()
     html = Markup(table.to_html(index = False))
-    print(html)
     return html
 
 if __name__ == "__main__":

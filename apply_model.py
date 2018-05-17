@@ -13,6 +13,7 @@ def train_model():
     from trade_analysis import prep_data, get_train_data
     from get_currency_info import get_current
     from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.ensemble import GradientBoostingRegressor
 
     df, sds = get_train_data()
     
@@ -23,13 +24,15 @@ def train_model():
     
     y_train = (Y.values > 0)*1
     gb.fit(X, y_train.ravel())
-    return gb
+
+    gb_reg = GradientBoostingRegressor(n_estimators = 150, min_samples_leaf = 5, min_samples_split = 10, max_depth = 2)
+    gb_reg.fit(X, Y.values.ravel())
+     
+    return gb, gb_reg
 
   #get available options
 def last_trades(instrument):
     import requests
-
-    
 
     url = 'https://www.deribit.com/api/v1/public/getsummary?instrument={}'.format(instrument)
     obj = requests.get(url).json()['result']
@@ -56,7 +59,7 @@ def apply_model():
         trades.append(last_trades(option))
     
     df = pd.DataFrame(trades)
-    model_obj = train_model()
+    gb_class, gb_reg = train_model()
     #transform data
     
     df['indexPrice'] = df['uPx']
@@ -77,6 +80,9 @@ def apply_model():
     df['timeStamp'] = df['timeStamp'].map(lambda x: datetime.strptime(x, '%Y-%m-%d %H:%M:%S GMT'))
     df = df.loc[df.strike.notna()]
     df['strike'] = df['strike'].map(int)
+    add_time = lambda x: timedelta(days = 1) - timedelta(seconds = 1) + x #make exp date end of day
+    df['expiration_date'] = df['expiration_date'].map(add_time)
+
     df['rf'] = quandl.get('FRED/DTB6', start_date = datetime.today() - timedelta(days = 1)).values[0,0]/100
     df['time_left'] = (df['expiration_date'] - 
       df['timeStamp']).values.astype('timedelta64[s]').astype(float)/(365*86400)
@@ -102,21 +108,26 @@ def apply_model():
     df2['option_type'] = df2['option_type'].map(lambda x: opt_map[x])
     df2['strike_dist'] = df2.apply(strike_dist, axis = 1)
     df2['price'] = df2.apply(lambda x: x.price * x.indexPrice, axis = 1)#option price converted to USD
-    df2['price_delta'] = df2.apply(lambda x: (x.bs_price - x.price)/x.indexPrice, axis = 1)#difference between option price and
+    df2['price_delta'] = df2.apply(lambda x: 
+        min(max((x.bs_price - x.price)/x.price, -2), 2), axis = 1)#difference between option price and
     df2.replace('', 0, inplace = True)
-    X2 = df2.loc[df2['quantity'] > 0, ['quantity', 'strike_dist', 'price_delta', 'time_left', 'option_type']]
+    df2 = df2.loc[df2['quantity'] > 0]
+    X2 = df2.loc[:, ['quantity', 'strike_dist', 'price_delta', 'time_left', 'option_type']]
     
     #use this array to find the best options
-    probs = model_obj.predict_proba(X2)
+    probs = gb_class.predict_proba(X2)
+    values = gb_reg.predict(X2)
     
-    return probs, df2
+    return probs, values, df2
 
 def make_table():
     import pandas as pd
     
-    probs, df = apply_model()
-    probs_df = pd.DataFrame(probs[:,1].ravel(), columns = ['Probability of Increase'])
-    info_df = df.join(probs_df, how = 'left')
-    info_df = info_df.loc[:, ['instrument', 'Probability of Increase']].dropna()
+    probs, values, df = apply_model()
+    df2.reset_index(inplace = True)
+    probs_df = pd.DataFrame({'Probability of Increase': probs[:,1].ravel(), 
+                             'Expected Increase': values.ravel()})
+    info_df = df2.join(probs_df, how = 'left')
+    info_df = info_df.loc[:, ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
     
     return info_df

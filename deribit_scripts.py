@@ -32,7 +32,6 @@ def get_options(scope):
         return df
 
 
-#
 #Next, loop through and get every trade for each option above
 def get_trades():
     hists = []

@@ -35,9 +35,10 @@ def insert_sds():
     
     
     #get most recent sd in collection
-    for item in db.sds.aggregate([{ '$group' : { '_id': 'null', 'max': { '$max' : "$date" }}}]):
-        max_date = item['max'] 
-    
+    #for item in db.sds.aggregate([{ '$group' : { '_id': 'null', 'max': { '$max' : "$date" }}}]):
+        #max_date = item['max']
+        
+    max_date = datetime(2016, 10, 1)
     standard_devs = []
     for i in range(1, (datetime.today() - max_date).days):
         date = max_date + timedelta(days = i)
