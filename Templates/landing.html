@@ -22,6 +22,18 @@
         padding: 12px;
         font-weight: bold;	
     }
+button {
+  font: bold 11px Arial;
+  font-size: 120%;
+  text-decoration: none;
+  background-color: black;
+  color: white;
+  padding: 2px 6px 2px 6px;
+}
+h2{
+  color: green;
+  font: Arial;
+}
   	
   </style>
   <script>
@@ -51,8 +63,12 @@
   </script>
 </head>
 <body>
-	<h2>Find the best BTC options available<h2>
+	<h2>Deribit Trading Helper</h2>
+	<br><br>
+	<fieldset style = "width:200px">
+	<legend>Find best available options</legend>
 	<button onclick = "return findOptions()">Find Options</button><br><br>
+	</fieldset>
     <div id = "best_options">
     </div>
     

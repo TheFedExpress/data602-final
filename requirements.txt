@@ -1,0 +1,9 @@
+pandas 
+numpy
+pymongo
+Flask
+scipy
+sklearn
+quandl
+
+
