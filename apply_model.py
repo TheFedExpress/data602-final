@@ -84,7 +84,7 @@ def apply_model():
     add_time = lambda x: timedelta(days = 1) - timedelta(seconds = 1) + x #make exp date end of day
     df['expiration_date'] = df['expiration_date'].map(add_time)
 
-    df['rf'] = quandl.get('FRED/DTB6', start_date = datetime.today() - timedelta(days = 1)).values[0,0]/100
+    df['rf'] = quandl.get('FRED/DTB6', start_date = datetime.today() - timedelta(days = 10)).values[0,-1]/100
     df['time_left'] = (df['expiration_date'] - 
       df['timeStamp']).values.astype('timedelta64[s]').astype(float)/(365*86400)
     df['date'] = df['timeStamp'].map(lambda x: x.date())
