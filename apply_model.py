@@ -134,13 +134,3 @@ def make_table():
                           ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
     
     return info_df
-import pandas as pd
-    
-probs, values, df = apply_model()
-df.reset_index(inplace = True)
-probs_df = pd.DataFrame({'Probability of Increase': probs[:,1].ravel(), 
-                         'Expected Increase': values.ravel()})
-info_df = df.join(probs_df, how = 'left')
-info_df = info_df.loc[(info_df['Probability of Increase'] > .65) & (info_df['Expected Increase'] > .05), 
-                      ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
-    
