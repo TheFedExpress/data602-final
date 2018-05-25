@@ -4,14 +4,13 @@ Created on Mon Apr 16 18:33:15 2018
 
 @author: pgood
 """
-from datetime import datetime, timedelta
-from pymongo import MongoClient
-import time
+
+
 
 def get_sd(date):
     from datetime import datetime, timedelta
     import requests
-
+    from datetime import datetime, timedelta
     import pandas as pd
     import numpy as np
     
@@ -28,17 +27,20 @@ def get_sd(date):
     return np.std(df.change.values[1:])*np.sqrt(365)
 
 def insert_sds():
-
+    from pymongo import MongoClient
+    from datetime import datetime, timedelta
+    import time
+    
     connection = MongoClient('ds149279.mlab.com', 49279)
     db = connection['data602final']
     db.authenticate('me', 'mypass')
     
     
     #get most recent sd in collection
-    #for item in db.sds.aggregate([{ '$group' : { '_id': 'null', 'max': { '$max' : "$date" }}}]):
-        #max_date = item['max']
+    for item in db.sds.aggregate([{ '$group' : { '_id': 'null', 'max': { '$max' : "$date" }}}]):
+        max_date = item['max']
         
-    max_date = datetime(2016, 10, 1)
+
     standard_devs = []
     for i in range(1, (datetime.today() - max_date).days):
         date = max_date + timedelta(days = i)

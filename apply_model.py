@@ -12,23 +12,24 @@ def train_model():
     
     from trade_analysis import prep_data, get_train_data
     from get_currency_info import get_current
-    from sklearn.ensemble import GradientBoostingClassifier
-    from sklearn.ensemble import GradientBoostingRegressor
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
 
     df, sds = get_train_data()
     
     X, Y, df2 = prep_data(sds, df)
     
-    gb = GradientBoostingClassifier(n_estimators = 150, min_samples_leaf = 5, min_samples_split = 10,
-                                    max_depth = 2)
+    gb_reg = GradientBoostingRegressor(n_estimators = 1000, 
+                                      min_samples_leaf = 5, 
+                                      min_samples_split = 10, 
+                                      max_depth = 3
+                                      )
+    gb_reg.fit(X, Y.values.ravel())    
     
     y_train = (Y.values > 0)*1
-    gb.fit(X, y_train.ravel())
-
-    gb_reg = GradientBoostingRegressor(n_estimators = 150, min_samples_leaf = 5, min_samples_split = 10, max_depth = 2)
-    gb_reg.fit(X, Y.values.ravel())
+    rf = RandomForestClassifier(min_samples_leaf = 10, n_estimators = 100, min_samples_split = 10)
+    rf.fit(X, y_train)
      
-    return gb, gb_reg
+    return rf, gb_reg
 
   #get available options
 def last_trades(instrument):
@@ -87,7 +88,8 @@ def apply_model():
     df['time_left'] = (df['expiration_date'] - 
       df['timeStamp']).values.astype('timedelta64[s]').astype(float)/(365*86400)
     df['date'] = df['timeStamp'].map(lambda x: x.date())
-    sds['date'] = sds['date'].map(lambda x: x.date() + timedelta(days = 2))
+    sds['date'] = sds['date'].map(lambda x: x.date() + timedelta(days = 3))#make sure delays in price
+    #history in API doesn't cause app to not work
     
     df = pd.merge(df, sds, on = ['date'])
     
@@ -124,10 +126,21 @@ def make_table():
     import pandas as pd
     
     probs, values, df = apply_model()
-    df2.reset_index(inplace = True)
+    df.reset_index(inplace = True)
     probs_df = pd.DataFrame({'Probability of Increase': probs[:,1].ravel(), 
                              'Expected Increase': values.ravel()})
-    info_df = df2.join(probs_df, how = 'left')
-    info_df = info_df.loc[:, ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
+    info_df = df.join(probs_df, how = 'left')
+    info_df = info_df.loc[(info_df['Probability of Increase'] > .65) & (info_df['Expected Increase'] > .05), 
+                          ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
     
     return info_df
+import pandas as pd
+    
+probs, values, df = apply_model()
+df.reset_index(inplace = True)
+probs_df = pd.DataFrame({'Probability of Increase': probs[:,1].ravel(), 
+                         'Expected Increase': values.ravel()})
+info_df = df.join(probs_df, how = 'left')
+info_df = info_df.loc[(info_df['Probability of Increase'] > .65) & (info_df['Expected Increase'] > .05), 
+                      ['instrument', 'Probability of Increase', 'Expected Increase']].dropna()
+    

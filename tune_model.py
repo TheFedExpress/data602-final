@@ -8,13 +8,12 @@ Created on Fri May 11 14:39:36 2018
 
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+import sklearn.ensemble as ske
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LogisticRegression
 from matplotlib import pyplot as plt
-from sklearn.metrics import auc, roc_curve, f1_score, make_scorer
-from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import auc, roc_curve, f1_score, make_scorer, r2_score
+from sklearn.model_selection import GridSearchCV,  cross_val_score, KFold
 from trade_analysis import get_train_data, prep_data
 
 df, sds = get_train_data()
@@ -47,7 +46,7 @@ def impl_vol_func(vol, df):
     d1 = top_d1/bottom_d1
 
     d2 = d1 - vol * np.sqrt(t)
-    if df.option_type == 'C':
+    if df.option_type == 1:
         return  df.price - (df.indexPrice*norm.cdf(d1) - df.strike * np.exp(-rf*t) * norm.cdf(d2))
     else:
         return df.price - (df.strike * np.exp(-rf * t) * norm.cdf(-d2) - df.indexPrice * norm.cdf(-d1))
@@ -62,7 +61,7 @@ def bs_price(vol, df):
     d1 = top_d1/bottom_d1
 
     d2 = d1 - vol * np.sqrt(t)
-    if df.option_type == 'C':
+    if df.option_type == 1:
         return  df.indexPrice*norm.cdf(d1) - df.strike * np.exp(-rf*t) * norm.cdf(d2)
     else:
         return df.strike * np.exp(-rf * t) * norm.cdf(-d2) - df.indexPrice * norm.cdf(-d1)
@@ -75,7 +74,7 @@ def bs_reg(indexPrice,strike,vol,rf,t, option_type):
     d1 = top_d1/bottom_d1
 
     d2 = d1 - vol * np.sqrt(t)
-    if option_type == 'C':
+    if option_type == 1:
         return  indexPrice*norm.cdf(d1) - strike * np.exp(-rf*t) * norm.cdf(d2)
     else:
         return strike * np.exp(-rf * t) * norm.cdf(-d2) - indexPrice * norm.cdf(-d1)
@@ -109,7 +108,7 @@ def get_implied_vol(df):
     
     return impl_vol[0]
     
-"""
+
 actuals = df2.loc[df2['fut_option_price'].notna(), ['price_change']].values
 groups = df2.loc[df2['fut_option_price'].notna(), ['instrument']]
 
@@ -121,22 +120,28 @@ plt.show()
 #The group shuffle split prevents the same option from being in the train and test sets.  I'm pretty sure that will 
 #help how well the model generalizes
 
-rs = GroupShuffleSplit(n_splits=10, test_size = .25)
-splits = rs.split(X, Y, groups = groups)
+#rs = GroupShuffleSplit(n_splits=10, test_size = .25)
+rs  = KFold(n_splits=10, shuffle=True)
 
-#Probably need to clean all these lists up with some DFs or dictionaries
-residuals = []
-probs_regr = []
-scores_regr = []
-scores_logistic = []
-all_probs = []
-probs_log_main = []
-scores_log_main = []
-increase_rf = []
-increase_log = []
-increase_gb = []
-scores_gb = []
-probs_gb = []
+#gradient boost classifier
+"""
+param_grid = {'min_samples_leaf': [2, 5, 10],
+          'min_samples_split': [2, 5, 10],
+          'max_depth' : [2, 3],
+          'subsample': [.8, 1],
+          'max_features' : [.8, 1]
+          }
+
+y_fit = (Y.values > 0)*1
+gb = GridSearchCV(GradientBoostingClassifier(n_estimators = 700), param_grid, make_scorer(f1_score),
+                  cv = rs)
+gb.fit(X, y_fit.ravel())
+print("Best estimator found by grid search:{}".format(gb.best_estimator_))
+"""
+
+
+splits = rs.split(X, Y, groups = groups)
+all_mets = []
 for train, test in splits:
     x_train, y_train = X.iloc[train,:], Y.iloc[train,:]
     x_test, y_test, actuals_test = X.iloc[test, :],  Y.iloc[test,:], actuals[test] 
@@ -144,70 +149,94 @@ for train, test in splits:
     logistic_test = (y_test.values > 0)*1
     logistic_train = (y_train.values > 0)*1
 
-    #gradient boost classifier
-    param_grid = {'min_samples_leaf': [5],
-              'min_samples_split': [10],
-              'max_depth' : [3],
-              'subsample': [1],
-              'max_features' : [1]
-              }
-    
-    gb = GridSearchCV(GradientBoostingClassifier(n_estimators = 150), param_grid, make_scorer(f1_score))
+    gb = ske.GradientBoostingClassifier(min_samples_leaf= 5,
+          min_samples_split= 10,
+          max_depth = 3,
+          subsample = .8,
+          n_estimators = 1000)    
     gb.fit(x_train, logistic_train.ravel())
-    scores_gb.append(gb.score(x_test, logistic_test))
     probs3 = gb.predict_proba(x_test)
-    probs_gb.append(probs3)
-    increase_gb.append(actuals_test[probs3[:,1] > .65].mean())
-    print("Best estimator found by grid search:{}".format(gb.best_estimator_))
+    
+    fpr_gb, tpr_gb, _ = roc_curve(logistic_test, probs3[:,1].ravel(), 1)
+
     
     #rf regression (gives continuous predictions)
-    regr = RandomForestClassifier(min_samples_leaf = 5, n_estimators = 100, min_samples_split = 10)
+    regr = ske.RandomForestClassifier(min_samples_leaf = 10, n_estimators = 100, min_samples_split = 10)
     regr.fit(x_train, logistic_train.ravel())
-    scores_regr.append(regr.score(x_test, logistic_test))
     probs2 = regr.predict_proba(x_test)
-    probs_regr.append(probs2)
-    increase_rf.append(actuals_test[probs2[:,1] > .65].mean())
+    fpr_rf, tpr_rf, _ = roc_curve(logistic_test, probs2[:,1].ravel(), 1)
     #pred = regr.predict(x_test)
     
-    """
-    #logistic to classify RF predictions
-    logistic = LogisticRegression()
-    logistic.fit(pred.reshape(-1,1), logistic_test.ravel())
-    probs2 = logistic.predict_proba(pred.reshape(-1,1))
-    all_probs.append(probs2)
-    increase_rf.append(actuals_test[probs2[:,1] > .6].mean())#find avg price change when classifier prob > .6
-    scores_logistic.append(logistic.score(pred.reshape(-1,1), logistic_test))
-    """
     
     #logistic classifier on original data
     log_regr = LogisticRegression()
     log_regr.fit(x_train, logistic_train.ravel())
     probs1 = log_regr.predict_proba(x_test)
-    probs_log_main.append(probs1)
-    scores_log_main.append(log_regr.score(x_test, logistic_test))
-    increase_log.append(actuals_test[probs1[:,1] > .6].mean())#find avg price change when classifier prob > .6
+    fpr_log, tpr_log, _ = roc_curve(logistic_test, probs1[:,1].ravel(), 1)    
+
+
+    #stack
+    all_probs = np.array([probs2[:,1].ravel(), probs3[:,1].ravel()]).mean(axis = 0)
+    fpr_st, tpr_st, _ = roc_curve(logistic_test, all_probs.ravel(), 1)
     
-fpr_rf, tpr_rf, _ = roc_curve(logistic_test, probs2[:,1].ravel(), 1)
-fpr_log, tpr_log, _ = roc_curve(logistic_test, probs1[:,1].ravel(), 1)
-fpr_gb, tpr_gb, _ = roc_curve(logistic_test, probs3[:,1].ravel(), 1)
+
+    #Regressors
+    #gb
+    gb_reg = ske.GradientBoostingRegressor(n_estimators = 1000, 
+                                      min_samples_leaf = 5, 
+                                      min_samples_split = 10, 
+                                      max_depth = 3
+                                      )
+    gb_reg.fit(x_train, y_train.values.ravel())
+    
+    pred1 = gb_reg.predict(x_test) 
+    
+    rf_reg = ske.GradientBoostingRegressor(n_estimators = 200, 
+                                       min_samples_leaf = 5, 
+                                       min_samples_split = 10, 
+                                       max_depth = 3
+                                       )
+    rf_reg.fit(x_train, y_train.values.ravel())
+    pred2 = rf_reg.predict(x_test) 
+    #stack
+    pred3 = np.array([pred1, pred2]).mean(axis = 0)
+
+    
+    #mets
+    mets = { 
+                'price_increase_rf': actuals_test[(probs2[:,1] > .65) & (pred1 > .05)].mean(),
+                'price_increase_gb': actuals_test[(probs3[:,1] > .65) & (pred2 > .05)].mean(),
+                'price_increase_log' : actuals_test[probs1[:,1] > .6].mean(),
+                'price_increase_st' : actuals_test[(all_probs > .65) & (pred3 > .05)].mean(),
+                'pirce_increase_mean' : actuals_test.mean(),
+                'score_gb' : gb.score(x_test, logistic_test),
+                'score_rf' : regr.score(x_test, logistic_test),
+                'score_log' : log_regr.score(x_test, logistic_test),
+                'mse_gb' : mean_squared_error(y_test.values.ravel(), pred1),
+                'mse_rf' : mean_squared_error(y_test.values.ravel(), pred2),
+                'mse_st' : mean_squared_error(y_test.values.ravel(), pred3),
+                'r2_gb' :  r2_score(y_test.values.ravel(), pred1),
+                'r2_rf' :  r2_score(y_test.values.ravel(), pred2),
+                'r2_st' :  r2_score(y_test.values.ravel(), pred3),
+                'auc_rf' : auc(fpr_rf, tpr_rf),
+                'auc_gb' : auc(fpr_gb, tpr_gb),
+                'auc_st' : auc(fpr_st, tpr_st)
+            }
+    all_mets.append(mets)
 
 
 plt.plot([0, 1], [0, 1], 'k--')
 plt.plot(fpr_rf, tpr_rf, label='RF')
 plt.plot(fpr_log, tpr_log, label='Logistic')
 plt.plot(fpr_gb, tpr_gb, label='GB')
+plt.plot(fpr_st, tpr_st, label='Stack')
 plt.xlabel('False positive rate')
 plt.ylabel('True positive rate')
 plt.title('ROC curve')
 plt.legend(loc='best')
 plt.show()
 
-auc_rf = auc(fpr_rf, tpr_rf)
-auc_gb = auc(fpr_gb, tpr_gb)
-
-mse = np.array(residuals).mean()
 
 #df, sds = get_train_data()
 #X, Y, df2 = prep_data(sds,df)
 #auc_rf, aug_gb = test_model(df2, X, Y)
-"""
